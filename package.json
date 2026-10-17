@@ -1,0 +1,8 @@
+{
+  "name": "catchtype",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "cd packages/engine && bun test"
+  }
+}
