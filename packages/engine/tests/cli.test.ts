@@ -48,4 +48,9 @@ describe('cli', () => {
     const r = run('Tr0ub4dor&3\n');
     expect(r.stdout).toBe('Tr0ub4dor&3\n');
   });
+
+  test('v1.1 회귀: 개발 용어 문장 @ko (git npm ls)', () => {
+    const r = run('git npm ls\n', ['--start', 'ko']);
+    expect(r.stdout).toBe('git npm ls\n');
+  });
 });
