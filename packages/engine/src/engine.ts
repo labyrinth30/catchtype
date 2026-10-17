@@ -327,20 +327,24 @@ function resolveConflict(
 }
 
 /**
- * v1.1 카멜케이스/고유명 보호: 한국어 상태에서 대문자-시작 카멜케이스 토큰('Figma',
- * 'GitHub')을 쳤는데 en사전에(접두어조차) 없을 때, ko 읽기가 통계·자모런 근거로
- * 이기려 하면 오판이다 — 진짜 영어 고유명을 ko통계로 갈아치우는 실수.
- * 그런 토큰은 판정을 포기하고 그대로 통과(fallback)시킨다.
+ * v1.1 카멜케이스/고유명 보호: 대문자-시작 카멜케이스 토큰('Figma', 'GitHub')을 쳤는데
+ * en사전에(접두어조차) 없을 때, 반대 언어 읽기가 통계·자모런 근거로 이기려 하면 오판이다 —
+ * 진짜 영어 고유명을 ko통계로 갈아치우는 실수. 두 상태(@ko와 @en 모두)에서 발동해야 한다:
+ * @ko에서는 cur이 stats/jamo-run, @en에서는 alt가 stats/jamo-run인 경우를 각각 잡는다.
  * 조건: (a) raw가 대문자 1 + 소문자들 카멜케이스(약어 TODO·A와 구분), (b) 전 글쇠 라틴,
- * (c) en사전에 접두어 없음, (d) ko 읽기 근거가 stats 또는 jamo-run(사전 히트면 진짜
+ * (c) en사전에 접두어 없음, (d) stats 또는 jamo-run 근거의 한글 읽기(사전 히트면 진짜
  * 단어이므로 제외 — 'Zoo'→'ㅈㅗㅗ'류 역시 사전 히트가 아니면 방해 안 함).
  */
-function isCamelCaseProtected(keys: readonly Key[], cur: Read, raw: string, dict?: Dict): boolean {
+function isCamelCaseProtected(keys: readonly Key[], cur: Read, alt: Read, raw: string, dict?: Dict): boolean {
   if (!/^[A-Z][a-z]+$/.test(raw)) return false;
   if (!dict) return false;
   if (hasPrefix(dict, raw.toLowerCase())) return false; // 사전 접두어도 없음
-  if (cur.valid && cur.basis !== 'stats' && cur.basis !== 'jamo-run') return false;
-  return cur.valid; // 이 보호는 ko(통계·자모런) 읽기가 이기려 할 때만 발동
+  // ko 쪽이 약근거(stats·jamo-run)일 때만 보호: 어느 상태든 ko읽기 근거로 판단.
+  // @ko에서는 cur이 stats/jamo-run이고, @en에서는 alt가 그렇다. 둘 다 잡는다.
+  const koIsWeak = cur.basis === 'stats' || cur.basis === 'jamo-run' ||
+    alt.basis === 'stats' || alt.basis === 'jamo-run';
+  if (!koIsWeak) return false;
+  return true;
 }
 
 /** 단어(영문자만으로 된 키 런) 하나를 판정. 세션 상태(state)를 받아 결정을 돌려준다. */
@@ -361,7 +365,7 @@ export function judgeWord(keys: readonly Key[], state: Lang, dicts?: Dicts): Wor
 
   // 카멜케이스 보호(v1.1): 한국어 상태에서 대문자 시작 단어가 en사전에 없어
   // ko통계가 이기려 할 때, en 무근거를 "고유명사"로 보고 그대로 통과시킨다.
-  if (dicts && isCamelCaseProtected(keys, cur, raw, dicts.en)) {
+  if (dicts && isCamelCaseProtected(keys, cur, alt, raw, dicts.en)) {
     return passthrough('fallback', state);
   }
 
