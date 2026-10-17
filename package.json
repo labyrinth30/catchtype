@@ -4,5 +4,8 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "test": "cd packages/engine && bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3"
   }
 }
