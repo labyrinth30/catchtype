@@ -88,7 +88,8 @@ final class EventStreamCorrector {
 
     private func commit(tail: CTKey?) -> CTCorrection? {
         guard !opaqueToken, !raw.isEmpty else { return nil }
-        let result = ctProcessText(raw, initialLang: sessionLang, dicts: dicts)
+        // Rewriting text does not switch the physical keyboard input source.
+        let result = ctProcessText(raw, initialLang: config.initialLang, dicts: dicts)
         sessionLang = result.finalLang
         guard !result.passwordSuspect, result.text != raw,
               result.text.count <= config.maxRewriteLength else { return nil }

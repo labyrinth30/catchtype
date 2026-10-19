@@ -99,6 +99,16 @@ final class EventStreamTests: XCTestCase {
         XCTAssertNil(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 400))
     }
 
+    func testKoreanCorrectionDoesNotChangeTheNextPhysicalLatinWordSource() {
+        let engine = EventStreamCorrector()
+        type("dkssudgktpdy", into: engine)
+        XCTAssertEqual(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 200)?.replacement, "안녕하세요")
+        type("READMEdp", into: engine, at: 300)
+        XCTAssertEqual(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 400)?.replacement, "README에")
+        type("Figma", into: engine, at: 500)
+        XCTAssertNil(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 600))
+    }
+
     func testPromptClassificationAndSecureSubrole() {
         XCTAssertTrue(CTPasswordGuard.isSecure(role: "AXTextField", subrole: "AXSecureTextField", description: "", title: ""))
         XCTAssertTrue(CTPasswordGuard.terminalPromptLooksLikePassword("user@host's password:"))

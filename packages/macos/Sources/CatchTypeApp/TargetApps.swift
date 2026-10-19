@@ -17,7 +17,7 @@ struct CTAppEntry: Codable, Equatable {
 
 struct CTAppConfig: Codable {
     var apps: [CTAppEntry] = CTAppConfig.defaultApps
-    var initialLang: String = "en"          // 세션 시작 언어 (en|ko)
+    var initialLang: String = "en"          // 각 단어의 입력 언어 (en|ko); 출력 언어와 별개
     var passwordGuard: Bool = true          // AX 비밀번호 필드 방어 on/off
     var terminalPromptGuard: Bool = true    // sudo/ssh 프롬프트 휴리스틱 on/off
     var wordTimeoutMs: Double = 1200

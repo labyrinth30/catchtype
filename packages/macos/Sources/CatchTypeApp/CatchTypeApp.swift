@@ -217,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .ko: langLabel = "한국어"
         case .en: langLabel = "영어"
         }
-        let summary = NSMenuItem(title: "세션 언어: \(langLabel)", action: nil, keyEquivalent: "")
+        let summary = NSMenuItem(title: "최근 판정 언어: \(langLabel)", action: nil, keyEquivalent: "")
         summary.isEnabled = false
         menu.addItem(summary)
 
