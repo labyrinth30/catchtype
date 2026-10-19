@@ -62,7 +62,11 @@ final class EventStreamCorrector {
 
     func handleKey(_ key: CTKey, timestampMs: Double) -> CTCorrection? {
         if ["Space", "Enter", "Tab"].contains(key.code) {
-            defer { handlePossibleInterruption() }
+            defer {
+                raw = ""
+                opaqueToken = false
+                lastEventMs = 0
+            }
             guard !key.shift, !suppressed, timestampMs >= promptHoldUntil else { return nil }
             return commit(tail: key)
         }
@@ -77,7 +81,8 @@ final class EventStreamCorrector {
 
     func handlePossibleInterruption() {
         raw = ""
-        opaqueToken = false
+        // An interruption can leave the cursor inside a word; wait for a known boundary.
+        opaqueToken = true
         lastEventMs = 0
     }
 

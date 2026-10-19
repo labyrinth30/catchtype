@@ -31,6 +31,24 @@ final class EventStreamTests: XCTestCase {
         XCTAssertNil(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 1400))
     }
 
+    func testInterruptionDoesNotRewriteOnlyTheRestOfAWord() {
+        let engine = EventStreamCorrector()
+        type("d", into: engine)
+        engine.handlePossibleInterruption()
+        type("kssudgktpdy", into: engine)
+        XCTAssertNil(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 200))
+        type("dkssudgktpdy", into: engine, at: 300)
+        XCTAssertEqual(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 400)?.replacement, "안녕하세요")
+    }
+
+    func testTimeoutDoesNotRewriteAnUntrackedWordSuffix() {
+        let engine = EventStreamCorrector()
+        type("d", into: engine)
+        engine.expirePending(nowMs: 1400)
+        type("kssudgktpdy", into: engine, at: 1500)
+        XCTAssertNil(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 1600))
+    }
+
     func testDigitsKeepWholePasswordTokenUnchanged() {
         let engine = EventStreamCorrector()
         for ch in "dkssudgktpdy123!" { _ = engine.handleText(String(ch), timestampMs: 100) }
