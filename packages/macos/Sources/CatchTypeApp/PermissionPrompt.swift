@@ -49,22 +49,11 @@ enum CTAccessibility {
         alert.addButton(withTitle: "다시 확인")
         alert.addButton(withTitle: "나중에")
         alert.alertStyle = .informational
-        let openSys = NSAppleScript(source: """
-        tell application "System Preferences"
-            activate
-            reveal pane id "com.apple.preference.security?Privacy_Accessibility"
-        end tell
-        """)
-        _ = openSys?.execute()
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            // 재검사 — 권한이 생길 때까지 최대 몇 번 재시도(사용자가 토글할 시간 필요).
-            for _ in 0..<6 {
-                if AXIsProcessTrusted() { break }
-                Thread.sleep(forTimeInterval: 0.8)
-            }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
         }
+        _ = alert.runModal()
     }
 }
 
-#endif // os(macOS)
+#endif
