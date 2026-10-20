@@ -3,7 +3,7 @@
 //  TargetApps.swift
 //  CatchType
 //
-//  앱별 토글 — 터미널이 1등 시민(SPEC.md). 목록은 기본 터미널 세트 + 사용자 추가.
+//  앱별 토글 — 터미널이 1등 시민(SPEC.md). 목록은 기본 터미널·채팅 앱 세트 + 사용자 추가.
 //  저장 위치: ~/Library/Application Support/CatchType/config.json
 //
 
@@ -17,7 +17,7 @@ struct CTAppEntry: Codable, Equatable {
 
 struct CTAppConfig: Codable {
     var apps: [CTAppEntry] = CTAppConfig.defaultApps
-    var initialLang: String = "en"          // 세션 시작 언어 (en|ko)
+    var initialLang: String = "en"          // 각 단어의 입력 언어 (en|ko); 출력 언어와 별개
     var passwordGuard: Bool = true          // AX 비밀번호 필드 방어 on/off
     var terminalPromptGuard: Bool = true    // sudo/ssh 프롬프트 휴리스틱 on/off
     var wordTimeoutMs: Double = 1200
@@ -32,6 +32,8 @@ struct CTAppConfig: Codable {
         .init(bundleID: "org.alacritty",           name: "Alacritty", enabled: true),
         .init(bundleID: "net.kovidgoyal.kitty",    name: "kitty",     enabled: true),
         .init(bundleID: "com.github.wez.wezterm",  name: "WezTerm",   enabled: true),
+        .init(bundleID: "sh.paseo.desktop",       name: "Paseo",     enabled: true),
+        .init(bundleID: "com.openai.codex",       name: "Codex",     enabled: true),
     ]
 }
 

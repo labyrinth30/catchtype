@@ -1,107 +1,131 @@
 #!/bin/bash
-# Catchtype macOS CLI installer — packages/macos/scripts/install.sh
-#
-# 소유자의 Mac에서 1회 실행: 빌드 + /usr/local/bin 심볼릭 + LaunchAgent 등록.
-# 앱은 swift build만으로 구동(NSSupports 變조 entry) — Xcode 프로젝트 불필요.
-#
-# usage:
-#   chmod +x install.sh && ./install.sh          # 빌드 + CLI + LaunchAgent
-#   UNINSTALL=1 ./install.sh                     # LaunchAgent 제거
-#
+# Build, sign, and install the app, its bundled CLI, and a login LaunchAgent.
 set -euo pipefail
+source "$(dirname "$0")/install-common.sh"
+cd "$PACKAGE_ROOT"
 
-cd "$(dirname "$0")/.."   # packages/macos root
-
+[ "$(uname -s)" = Darwin ] || { echo "[catchtype] macOS에서 실행하세요."; exit 1; }
 SWIFT_BIN="${SWIFT_BIN:-$(command -v swift || true)}"
-if [ -z "$SWIFT_BIN" ]; then
-  if [ -x "/usr/bin/swift" ]; then SWIFT_BIN="/usr/bin/swift";
-  elif [ -x "/opt/homebrew/bin/swift" ]; then SWIFT_BIN="/opt/homebrew/bin/swift";
-  else
-    echo "[catchtype] swift 툴체인 없음 — Xcode Command Line Tools를 설치하세요:"
-    echo "  xcode-select --install"
-    exit 1
-  fi
-fi
+[ -n "$SWIFT_BIN" ] || { echo "[catchtype] swift 없음 — xcode-select --install"; exit 1; }
 
 echo "== [1/4] swift build (release) =="
 "$SWIFT_BIN" build -c release
-BIN_DIR="$(dirname "$SWIFT_BIN" | xargs dirname)/bin"   # toolchain-root/bin? 실제 경로는 swift build -v 로 확인
-BUILD_BIN="$( "$SWIFT_BIN" build -c release --show-bin-path )"
+BUILD_BIN="$("$SWIFT_BIN" build -c release --show-bin-path)"
+for binary in catchtype CatchTypeApp; do
+  [ -x "$BUILD_BIN/$binary" ] || { echo "[catchtype] 실행 파일 없음: $BUILD_BIN/$binary"; exit 1; }
+done
 
-echo "== [2/4] CLI 심볼릭 링크 =="
-CLI_SRC="$BUILD_BIN/catchtype"
-if [ ! -f "$CLI_SRC" ]; then echo "[catchtype] 빌드 산출에 catchtype CLI가 없습니다: $BUILD_BIN"; exit 1; fi
-if [ -w /usr/local/bin ] 2>/dev/null; then
-  ln -sf "$CLI_SRC" /usr/local/bin/catchtype
-else
-  echo "  /usr/local/bin 권한 없음 — sudo 필요:"
-  sudo ln -sf "$CLI_SRC" /usr/local/bin/catchtype
-fi
-echo "  installed: $(readlink /usr/local/bin/catchtype || echo /usr/local/bin/catchtype)"
-
-echo "== [3/4] 앱 번들 생성 (.app) =="
-APP_DIR="$BUILD_BIN/CatchType.app/Contents/MacOS"
-mkdir -p "$APP_DIR"
-cp "$BUILD_BIN/CatchType" "$APP_DIR/CatchType"
-cat > "$BUILD_BIN/CatchType.app/Contents/Info.plist" <<PLIST
+STAGING="$(mktemp -d)"
+trap 'rm -rf "$STAGING"' EXIT
+APP_BUNDLE="$STAGING/CatchType.app"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Helpers"
+cp "$BUILD_BIN/CatchTypeApp" "$APP_BUNDLE/Contents/MacOS/CatchType"
+# Keep the CLI outside MacOS/: CatchType and catchtype collide on default macOS filesystems.
+cp "$BUILD_BIN/catchtype" "$APP_BUNDLE/Contents/Helpers/catchtype"
+cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
+<plist version="1.0"><dict>
     <key>CFBundleExecutable</key><string>CatchType</string>
     <key>CFBundleIdentifier</key><string>app.catchtype.macos</string>
     <key>CFBundleName</key><string>CatchType</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.1.0</string>
+    <key>CFBundleShortVersionString</key><string>1.1.1</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSAccessibilityUsageDescription</key>
     <string>키 입력의 한/영 상태를 판정해 교정하기 위해 손쉬운 사용 권한이 필요합니다.</string>
-</dict>
-</plist>
+</dict></plist>
 PLIST
-APP_BUNDLE="$BUILD_BIN/CatchType.app"
-# /Applications 복사 (기존 것 대체)
-if [ -w /Applications ]; then
-  rm -rf /Applications/CatchType.app
-  cp -R "$APP_BUNDLE" /Applications/CatchType.app
-  APP_BUNDLE_INSTALLED=/Applications/CatchType.app
-else
-  echo "  /Applications 권한 없음 — sudo 필요:"
-  sudo rm -rf /Applications/CatchType.app
-  sudo cp -R "$APP_BUNDLE" /Applications/CatchType.app
-  APP_BUNDLE_INSTALLED=/Applications/CatchType.app
-fi
-echo "  installed: $APP_BUNDLE_INSTALLED"
+plutil -lint "$APP_BUNDLE/Contents/Info.plist"
+codesign --force --sign - "$APP_BUNDLE/Contents/Helpers/catchtype"
+codesign --force --sign - "$APP_BUNDLE"
+codesign --verify --deep --strict "$APP_BUNDLE"
 
-echo "== [4/4] LaunchAgent 등록 (로그인 시 자동 시작) =="
+# Request elevation only for destinations this user cannot write.
+app_cmd() { if [ -w /Applications ]; then "$@"; else sudo "$@"; fi; }
+cli_cmd() { if [ -w /usr/local/bin ]; then "$@"; else sudo "$@"; fi; }
+CLI_LINK=/usr/local/bin/catchtype
+if [ -e "$CLI_LINK" ] && [ ! -L "$CLI_LINK" ]; then
+  echo "[catchtype] 기존 일반 파일을 덮어쓰지 않습니다: $CLI_LINK"
+  exit 1
+fi
+
+CLI_PREVIOUS="$(readlink "$CLI_LINK" || true)"
+if [ -L "$CLI_LINK" ] && ! owns_cli_link "$CLI_PREVIOUS"; then
+  echo "[catchtype] 다른 설치가 소유한 링크를 덮어쓰지 않습니다: $CLI_LINK → $CLI_PREVIOUS"
+  exit 1
+fi
 LAUNCH_PLIST="$HOME/Library/LaunchAgents/app.catchtype.macos.plist"
-cat > "$LAUNCH_PLIST" <<LAUNCH
+if [ -f "$LAUNCH_PLIST" ]; then cp "$LAUNCH_PLIST" "$STAGING/previous.plist"; fi
+APP_REPLACED=0
+CLI_REPLACED=0
+PLIST_REPLACED=0
+
+echo "== [2/4] 앱 번들 설치 =="
+# Stage on the destination filesystem before touching the working installation.
+DEST_STAGE="$(app_cmd mktemp -d /Applications/.catchtype.XXXXXX)"
+rollback() {
+  if [ "$APP_REPLACED" = 1 ]; then app_cmd rm -rf /Applications/CatchType.app; fi
+  if [ -d "$DEST_STAGE/previous.app" ]; then
+    app_cmd mv "$DEST_STAGE/previous.app" /Applications/CatchType.app
+  fi
+  if [ "$CLI_REPLACED" = 1 ]; then
+    if [ -n "$CLI_PREVIOUS" ]; then cli_cmd ln -sfn "$CLI_PREVIOUS" "$CLI_LINK";
+    else cli_cmd rm -f "$CLI_LINK"; fi
+  fi
+  if [ "$PLIST_REPLACED" = 1 ]; then
+    launchctl bootout "gui/$(id -u)/app.catchtype.macos" 2>/dev/null || true
+    if [ -f "$STAGING/previous.plist" ]; then cp "$STAGING/previous.plist" "$LAUNCH_PLIST";
+    else rm -f "$LAUNCH_PLIST"; fi
+  fi
+  if [ -f "$LAUNCH_PLIST" ]; then
+    launchctl bootstrap "gui/$(id -u)" "$LAUNCH_PLIST" 2>/dev/null || true
+  fi
+  app_cmd rm -rf "$DEST_STAGE"
+  rm -rf "$STAGING"
+}
+trap rollback EXIT
+app_cmd ditto "$APP_BUNDLE" "$DEST_STAGE/CatchType.app"
+launchctl bootout "gui/$(id -u)/app.catchtype.macos" 2>/dev/null || true
+stop_installed_app
+if [ -e /Applications/CatchType.app ]; then
+  app_cmd mv /Applications/CatchType.app "$DEST_STAGE/previous.app"
+fi
+app_cmd mv "$DEST_STAGE/CatchType.app" /Applications/CatchType.app
+APP_REPLACED=1
+
+echo "== [3/4] CLI 링크 설치 =="
+cli_cmd mkdir -p /usr/local/bin
+cli_cmd ln -sfn /Applications/CatchType.app/Contents/Helpers/catchtype "$CLI_LINK"
+CLI_REPLACED=1
+
+echo "== [4/4] LaunchAgent 등록 =="
+mkdir -p "$(dirname "$LAUNCH_PLIST")"
+cat > "$STAGING/launch.plist" <<'LAUNCH'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
+<plist version="1.0"><dict>
     <key>Label</key><string>app.catchtype.macos</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Applications/CatchType.app/Contents/MacOS/CatchType</string>
-    </array>
+    <key>ProgramArguments</key><array><string>/Applications/CatchType.app/Contents/MacOS/CatchType</string></array>
     <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
+    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
     <key>ProcessType</key><string>Background</string>
     <key>StandardOutPath</key><string>/tmp/catchtype.log</string>
     <key>StandardErrorPath</key><string>/tmp/catchtype.err.log</string>
-</dict>
-</plist>
+</dict></plist>
 LAUNCH
-launchctl bootout "gui/$(id -u)/app.catchtype.macos" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$LAUNCH_PLIST"
+plutil -lint "$STAGING/launch.plist"
+cp "$STAGING/launch.plist" "$LAUNCH_PLIST"
+PLIST_REPLACED=1
 launchctl enable "gui/$(id -u)/app.catchtype.macos"
-echo "  LaunchAgent: $LAUNCH_PLIST"
+launchctl bootstrap "gui/$(id -u)" "$LAUNCH_PLIST"
+# Installation is complete; remove the previous version only after registration succeeds.
+app_cmd rm -rf "$DEST_STAGE"
+trap 'rm -rf "$STAGING"' EXIT
 
-echo ""
-echo "[catchtype] 설치 완료 — 첫 실행 시 손쉬운 사용 권한 얼럿이 뜬다."
-echo "  - 권한 부여 후 앱 아이콘(⌨)를 클릭해 상태 확인"
-echo "  - CLI 테스트:  echo 'dkssudgktpdy' | catchtype"
-echo "  - First-run checklist: docs/FIRST-RUN-MACOS.md"
+echo "[catchtype] 설치 완료: /Applications/CatchType.app"
+echo "  첫 실행: 시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용 → CatchType 허용"
+echo "  CLI: echo 'dkssudgktpdy' | /usr/local/bin/catchtype"
+echo "  체크리스트: docs/FIRST-RUN-MACOS.md"

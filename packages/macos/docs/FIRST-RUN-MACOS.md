@@ -1,6 +1,11 @@
 # Catchtype macOS — 첫 실행 체크리스트 (소유자용)
 
-Mac에서 최초 설치 → 검증까지 순서대로. 소요 약 10분.
+Mac에서 최초 설치 → 검증까지 순서대로.
+
+현재 앱은 영문 키보드 입력 소스에서만 교정한다. 한국어 IME는 원문 통과이며,
+시간 초과 시에는 수집 상태만 비운다. 앱별 AX 조회가 실패하면 보호 설정에 따라 교정이 중단된다.
+앱 전환·커서 이동·시간 초과 등으로 추적이 끊긴 단어는 교정하지 않으며,
+공백·엔터·탭으로 경계를 확인한 다음 단어부터 다시 교정한다.
 
 ## 0. 사전 확인
 
@@ -17,7 +22,7 @@ scripts/build.sh --release
 
 - [ ] `swift build -c release` 가 오류 없이 끝나는가
 - [ ] `swift build -c release --show-bin-path`로 나온 디렉토리에
-      `catchtype`(CLI)과 `CatchType`(앱)이 있는가
+      `catchtype`(CLI)과 `CatchTypeApp`(앱)이 있는가
 
 > 첫 빌드는 사전 임베드 컴파일로 몇 분 걸린다. 이후 증분 빌드는 빠르다.
 
@@ -42,9 +47,12 @@ scripts/install.sh
 
 이 스크립트가:
 1. release 빌드 확인
-2. `catchtype` CLI를 `/usr/local/bin`에 심볼릭 (sudo 물음)
-3. `CatchType.app` 을 `/Applications` 에 복사
-4. LaunchAgent 등록 — 로그인 시 자동 시작 + 죽으면 재시작
+2. CLI를 앱의 `Contents/Helpers/catchtype`에 보관하고 `/usr/local/bin/catchtype`에 링크 (필요 시 sudo)
+3. 앱과 CLI를 ad hoc 서명·검증하고 `/Applications/CatchType.app`으로 교체 (실패 시 이전 설치 복원)
+4. `~/Library/LaunchAgents` 생성 후 LaunchAgent 등록 — 로그인 시 자동 시작 + 비정상 종료 시 재시작 (메뉴 종료는 유지)
+
+CLI는 `.build`를 지워도 유지된다. 소스 재빌드 설치는 ad hoc 서명이라 업데이트 후
+손쉬운 사용 권한을 다시 허용해야 할 수 있다. 설치 중 오류가 나면 이전 앱·CLI 링크·LaunchAgent 파일을 복원한다.
 
 - [ ] 설치 후 자동으로 앱이 뜬다. **손쉬운 사용 권한 얼럿이 나오면**:
       1. 시스템 설정이 자동으로 열린다 (개인정보 보호 및 보안 → 손쉬운 사용)
@@ -56,17 +64,21 @@ scripts/install.sh
 
 Terminal.app 을 열고 (기본 타겟 앱):
 
+영문 입력 소스를 선택한 뒤 먼저 공백을 한 번 눌러 단어 경계를 확정한다.
+
 | # | 상태를 먼저 | 타이핑 | 기대 결과 |
 |---|---|---|---|
 | 1 | 영문 모드로 전환 | `dkssudgktpdy` 스페이스 | `안녕하세요 ` |
-| 2 | 한국어 모드로 전환 | `hello` 스페이스 | `hello ` (그대로 — 오탐 아님) |
+| 2 | 한국어 모드로 전환 | 임의 한글 입력 | 앱이 개입하지 않음 (IME가 만든 입력 그대로) |
 | 3 | 영문 모드 | `npm testeh` 스페이스 | `npm test도 ` |
 | 4 | 영문 모드 | `READMEdp` 스페이스 | `README에 ` |
 | 5 | 아무 모드 | `Figma 링크` 입력 | `Figma` 그대로 유지 |
-| 6 | 아무 모드 | `asdf` 스페이스 (@ko) | `ㅁㄴㅇㄹ` |
+| 6 | 영문 모드 | `dkssudgktpdy` 후 1.5초 대기 | 타이머 교정 없음·원문 유지 |
 
 - [ ] 6개 케이스 통과 (스페이스가 교정 후 생기는 걸 포함)
-- [ ] 입력 지연이 체감되지 않는가 (런 끝에서 한 번만 교정되므로 즉각)
+- [ ] Shift+Tab·Shift+Enter·Ctrl+C·방향키·클릭 후 문자가 삭제되거나 조합키 동작이 바뀌지 않는가
+- [ ] `d` 입력 → 1.5초 대기 → `kssudgktpdy` 스페이스에서 단어 뒷부분만 교정되지 않는가
+- [ ] 입력 지연이 허용 가능한가 (AX 조회 시간이 터미널에 따라 달라짐)
 
 ## 5. 비밀번호 방어 테스트 (**중요**)
 
@@ -80,30 +92,53 @@ ssh anywhere     # (실패해도 됨) password: 프롬프트에서 비밀번호 
 - [ ] sudo/ssh 비밀번호가 오타 없이 정확히 입력되는가 (교정 시스템 개입 X)
 - [ ] 웹 브라우저 로그인 폼(비밀번호 필드)에서도 확인 권장
 
-> 방어 구조: AX 비밀번호 필드 감시 + 터미널 프롬프트 hold + 엔진 3종-문자클래스
-> 스킵. 셋 중 하나라도 작동하면 교정이 꺼진다. 그런데도 이상하면:
+> 방어 구조: 시스템 Secure Event Input + AX 비밀번호 subrole 감시 + 터미널 화면 프롬프트 8초 hold +
+> 숫자·기호 토큰 통과 및 엔진 passwordSuspect. AX 조회 실패 시 보호가 켜져 있으면 교정을 중단한다. 이상하면:
 > 상태표시줄 메뉴에서 "비밀번호 필드 방어 (AX)", "터미널 프롬프트 방어" 확인.
 
 ## 6. 앱별 토글 확인
 
 상태표시줄 `⌨` 클릭 → 메뉴:
 
-- [ ] "대상 앱" 리스트에서 Terminal / iTerm2 / Warp / Ghostty / Alacritty / kitty / WezTerm 확인
+- [ ] "대상 앱" 리스트에서 Terminal / iTerm2 / Warp / Ghostty / Alacritty / kitty / WezTerm / Paseo / Codex 확인
 - [ ] 예: Terminal 끄고 → Terminal에 타이핑 → 교정 안 됨 확인
 - [ ] iTerm2 켜고 → iTerm2에서 타이핑 → 교정 됨 확인
-- [ ] 비터미널 앱(메모장, 브라우저 주소창 등)에서도 **교정이 안 일어나는지** 반드시 확인
-      — 기본 설정은 터미널만 타겟이므로 다른 앱은 무조건 통과여야 함
+- [ ] Paseo와 Codex의 빈 메시지 입력창에서 ABC → 공백 → `dkssudgktpdy` → 공백으로 `안녕하세요 `가 되는가 (Enter는 전송할 수 있으므로 누르지 않는다)
+- [ ] 대상에 없는 앱(메모장, 브라우저 주소창 등)에서는 교정이 일어나지 않는가
 
-## 7. 상태 갱신·세션 언어
+기존 `config.json`의 대상 목록은 그대로 보존된다. 기존 설치에 Paseo·Codex가 없으면
+`apps` 배열에 다음 항목을 추가하고 앱을 재시작한다:
 
-- [ ] 상태표시줄 메뉴의 "세션 언어"가 타이핑에 따라 한국어/영어로 바뀌는지
+```json
+[
+  {"bundleID": "sh.paseo.desktop", "name": "Paseo", "enabled": true},
+  {"bundleID": "com.openai.codex", "name": "Codex", "enabled": true}
+]
+```
+
+정상적으로 읽힌 빈 입력창은 교정 경계를 추적한다. AX 값을 읽을 수 없는 입력창은 보호 설정에 따라 계속 통과시킨다.
+
+## 7. 상태 갱신·판정 언어
+
+- [ ] 상태표시줄 메뉴의 "최근 판정 언어"가 타이핑에 따라 한국어/영어로 바뀌는지
+- [ ] ABC 입력 상태에서 `dkssudgktpdy` → 공백 → `READMEdp` → 공백을 연속 입력하면 `안녕하세요 README에 `가 되는지
+
+교정 결과가 한국어여도 실제 입력 소스는 바뀌지 않는다. 앱은 각 단어를 설정된 입력 언어(`initialLang`, 기본 `en`)에서 판정한다.
+
 - [ ] "현재 앱: 교정 ON/OFF"가 포어그라운드 앱 전환에 따라 바뀌는지
+
+- [ ] 앱 직접 실행 후 다시 실행해도 인스턴스가 하나만 유지되는가
 
 ## 8. 자동 시작·로그
 
 - [ ] `launchctl list | grep catchtype` → 등록 확인
 - [ ] 재부팅 후에도 앱이 자동으로 뜨는가
 - [ ] 로그: `/tmp/catchtype.log`, `/tmp/catchtype.err.log`
+
+교정 차단 원인을 확인하려면 `config.json`의 `logFile`을 `true`로 바꾸고 앱을 재시작한다.
+`~/Library/Application Support/CatchType/diagnostic-status.txt`에 입력 내용 없이
+차단·교정 준비 상태만 기록하며, 파일 크기가 64 KiB에 도달하면 기록을 멈춘다.
+확인 후 `logFile`을 `false`로 되돌리고 앱을 재시작한다. 기본값은 `false`다.
 
 ## 문제 발생 시
 
@@ -112,7 +147,7 @@ ssh anywhere     # (실패해도 됨) password: 프롬프트에서 비밀번호 
 | 아이콘이 `⚠` | 손쉬운 사용 권한 — 시스템 설정에서 CatchType 토글 확인 |
 | 교정이 안 됨 | 현재 앱이 "대상 앱" 목록에 켜져 있는지 / 메뉴 "현재 앱: 교정 ON" |
 | 타이핑이 이상해짐 | 상태표시줄에서 즉시 Terminal 토글 OFF → `scripts/uninstall.sh` |
-| 비밀번호 오타 | **즉시 OFF** + issue 등록 — 이중 방어를 끄고 재현 단계 기록 |
+| 비밀번호 오타 | **즉시 OFF** + issue 등록 — 보호 설정을 유지한 채 재현 단계 기록 |
 | 앱이 계속 죽음 | `/tmp/catchtype.err.log` 확인 |
 
 ## 제거

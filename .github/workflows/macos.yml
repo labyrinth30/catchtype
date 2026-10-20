@@ -1,0 +1,27 @@
+name: macOS
+on:
+  push:
+    paths: ['packages/macos/**', '.github/workflows/macos.yml']
+  pull_request:
+    paths: ['packages/macos/**', '.github/workflows/macos.yml']
+jobs:
+  build-test:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: packages/macos
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      - run: swift build -c release
+      - run: python3 scripts/selfcheck-install.py
+      - name: CLI smoke
+        run: |
+          BIN="$(swift build -c release --show-bin-path)"
+          test "$(echo dkssudgktpdy | "$BIN/catchtype")" = '안녕하세요'
+          test "$(echo 'npm testeh dmlwk' | "$BIN/catchtype" --start ko)" = 'npm test도 의자'
+          set +e
+          printf 'Tr0ub4dor&3\n' | "$BIN/catchtype" --password-skip
+          status=$?
+          set -e
+          test "$status" = 3
