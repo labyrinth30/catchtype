@@ -100,11 +100,23 @@ ssh anywhere     # (실패해도 됨) password: 프롬프트에서 비밀번호 
 
 상태표시줄 `⌨` 클릭 → 메뉴:
 
-- [ ] "대상 앱" 리스트에서 Terminal / iTerm2 / Warp / Ghostty / Alacritty / kitty / WezTerm 확인
+- [ ] "대상 앱" 리스트에서 Terminal / iTerm2 / Warp / Ghostty / Alacritty / kitty / WezTerm / Paseo / Codex 확인
 - [ ] 예: Terminal 끄고 → Terminal에 타이핑 → 교정 안 됨 확인
 - [ ] iTerm2 켜고 → iTerm2에서 타이핑 → 교정 됨 확인
-- [ ] 비터미널 앱(메모장, 브라우저 주소창 등)에서도 **교정이 안 일어나는지** 반드시 확인
-      — 기본 설정은 터미널만 타겟이므로 다른 앱은 무조건 통과여야 함
+- [ ] Paseo와 Codex의 빈 메시지 입력창에서 ABC → 공백 → `dkssudgktpdy` → 공백으로 `안녕하세요 `가 되는가 (Enter는 전송할 수 있으므로 누르지 않는다)
+- [ ] 대상에 없는 앱(메모장, 브라우저 주소창 등)에서는 교정이 일어나지 않는가
+
+기존 `config.json`의 대상 목록은 그대로 보존된다. 기존 설치에 Paseo·Codex가 없으면
+`apps` 배열에 다음 항목을 추가하고 앱을 재시작한다:
+
+```json
+[
+  {"bundleID": "sh.paseo.desktop", "name": "Paseo", "enabled": true},
+  {"bundleID": "com.openai.codex", "name": "Codex", "enabled": true}
+]
+```
+
+정상적으로 읽힌 빈 입력창은 교정 경계를 추적한다. AX 값을 읽을 수 없는 입력창은 보호 설정에 따라 계속 통과시킨다.
 
 ## 7. 상태 갱신·판정 언어
 
@@ -122,6 +134,11 @@ ssh anywhere     # (실패해도 됨) password: 프롬프트에서 비밀번호 
 - [ ] `launchctl list | grep catchtype` → 등록 확인
 - [ ] 재부팅 후에도 앱이 자동으로 뜨는가
 - [ ] 로그: `/tmp/catchtype.log`, `/tmp/catchtype.err.log`
+
+교정 차단 원인을 확인하려면 `config.json`의 `logFile`을 `true`로 바꾸고 앱을 재시작한다.
+`~/Library/Application Support/CatchType/diagnostic-status.txt`에 입력 내용 없이
+차단·교정 준비 상태만 기록하며, 파일 크기가 64 KiB에 도달하면 기록을 멈춘다.
+확인 후 `logFile`을 `false`로 되돌리고 앱을 재시작한다. 기본값은 `false`다.
 
 ## 문제 발생 시
 

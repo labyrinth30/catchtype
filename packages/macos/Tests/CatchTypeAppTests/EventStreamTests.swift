@@ -109,6 +109,25 @@ final class EventStreamTests: XCTestCase {
         XCTAssertNil(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 600))
     }
 
+    func testEmptyReadableComposerEstablishesBoundaryBeforeFirstWord() {
+        let engine = EventStreamCorrector()
+        engine.handlePossibleInterruption()
+        let line = CTPasswordGuard.terminalLine(value: "")
+        XCTAssertEqual(line, "")
+        engine.setSuppressed(line == nil)
+        if line != nil { _ = engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 100) }
+        engine.setSuppressed(false)
+        type("dkssudgktpdy", into: engine, at: 200)
+        XCTAssertEqual(engine.handleKey(CTKey(code: "Space", shift: false), timestampMs: 300)?.replacement, "안녕하세요")
+    }
+
+    func testUnavailableValueStillBlocksAndPasswordPromptSurvivesBlankLines() {
+        XCTAssertNil(CTPasswordGuard.terminalLine(value: nil))
+        XCTAssertEqual(CTPasswordGuard.terminalLine(value: "\n\n"), "")
+        let line = CTPasswordGuard.terminalLine(value: "$ sudo example\nPassword:\n\n")
+        XCTAssertTrue(CTPasswordGuard.terminalPromptLooksLikePassword(line ?? ""))
+    }
+
     func testPromptClassificationAndSecureSubrole() {
         XCTAssertTrue(CTPasswordGuard.isSecure(role: "AXTextField", subrole: "AXSecureTextField", description: "", title: ""))
         XCTAssertTrue(CTPasswordGuard.terminalPromptLooksLikePassword("user@host's password:"))

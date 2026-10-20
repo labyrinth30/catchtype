@@ -33,8 +33,13 @@ enum CTPasswordGuard {
     }
 
     static func terminalLine(_ focus: Focus) -> String? {
-        guard let value = copyAttr(focus.element, kAXValueAttribute) as? String else { return nil }
-        return String(value.suffix(4096)).split(whereSeparator: \.isNewline).last.map(String.init)
+        return terminalLine(value: copyAttr(focus.element, kAXValueAttribute) as? String)
+    }
+
+    static func terminalLine(value: String?) -> String? {
+        guard let value = value else { return nil }
+        // An empty readable editor is safe; nil is reserved for AX lookup failures.
+        return String(value.suffix(4096)).split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
     }
 
     private static func copyAttr(_ element: AXUIElement, _ name: String) -> CFTypeRef? {

@@ -18,6 +18,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var contextPID: pid_t?
     private var contextSource: String?
     private var contextElement: AXUIElement?
+    private var lastDiagnostic = ""
+    private func diagnose(_ reason: String) {
+        guard config.logFile, reason != lastDiagnostic else { return }
+        lastDiagnostic = reason
+        let data = Data((reason + "\n").utf8)
+        let url = CTConfigStore.directory.appendingPathComponent("diagnostic-status.txt")
+        if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+        guard let file = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? file.close() }
+        if let size = try? file.seekToEnd(), size < 65536 { try? file.write(contentsOf: data) }
+    }
     private var swallowedKeyUps: Set<Int64> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -26,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         frontAppChanged(Notification(name: NSWorkspace.didActivateApplicationNotification))
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(frontAppChanged(_:)),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        diagnose("starting")
         if CTAccessibility.requestWithPrompt(showAlert: true) { installEventTap() }
         else { setStatusWaitingForPermission(); schedulePermissionPolling() }
         idleTimer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -63,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Unmanaged<CFString>.fromOpaque($0).takeUnretainedValue() as String
         } ?? ""
         if contextPID != app.processIdentifier || contextSource != sourceID {
+            diagnose("context-changed")
             corrector.handlePossibleInterruption()
             contextPID = app.processIdentifier
             contextSource = sourceID
@@ -70,31 +83,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // shortcut: IME composition is passed through; add composition-aware deletion before supporting Korean input sources.
         guard let bid = app.bundleIdentifier, CTConfigStore.isTargeted(config, bundleID: bid),
               sourceID.hasPrefix("com.apple.keylayout."), !IsSecureEventInputEnabled(), AXIsProcessTrusted() else {
+            diagnose("blocked-target-source-secure-or-permission")
             corrector.setSuppressed(true)
             return false
         }
         if config.passwordGuard || config.terminalPromptGuard {
             guard let focus = CTPasswordGuard.focusedControl() else {
+                diagnose("blocked-focus-unavailable")
                 corrector.setSuppressed(true)
                 return false
             }
             if let previous = contextElement, !CFEqual(previous, focus.element) {
+                diagnose("focus-changed")
                 corrector.handlePossibleInterruption()
             }
             contextElement = focus.element
             if config.passwordGuard && CTPasswordGuard.isSecure(role: focus.role, subrole: focus.subrole,
                 description: focus.description, title: focus.title) {
+                diagnose("blocked-secure-field")
                 corrector.setSuppressed(true)
                 return false
             }
             if config.terminalPromptGuard {
                 guard let line = CTPasswordGuard.terminalLine(focus) else {
+                    diagnose("blocked-value-unavailable")
                     corrector.setSuppressed(true)
                     return false
                 }
                 corrector.notePasswordPrompt(line: line, nowMs: now)
             }
         }
+        diagnose("input-allowed")
         corrector.setSuppressed(false)
         return true
     }
@@ -123,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tapSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), tapSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        diagnose("event-tap-active")
         setStatusActive()
     }
 
@@ -182,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             correction = corrector.handleText(text, timestampMs: now)
         }
+        if tail != nil { diagnose(correction == nil ? "boundary-no-correction" : "correction-ready") }
         refreshMenu()
         guard let correction = correction, CTEventSender.send(correction, proxy: proxy) else {
             return Unmanaged.passUnretained(event)
